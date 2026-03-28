@@ -28,43 +28,39 @@ logger = logging.getLogger(__name__)
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 _SYSTEM_PROMPT = """
-You are a vision system for a kids' educational robot programming toy.
+You are analyzing a photo of physical programming blocks for a kids' educational toy.
 
-The user will send a photo of a table with colored square cards laid out in a
-sequence (left to right, top to bottom). Each card is a CODE BLOCK.
+READING ORDER: Read blocks exactly like a book — left to right, then move to the next row, top to bottom. Never skip a row or read vertically.
 
-Your job: identify every code block card in the image and return them in the
-spatial order a child would read them (left to right, then top to bottom rows).
+YOUR TASK: Look at each card and identify what instruction is written or drawn on it.
 
-BLOCK TYPES you must recognize (by the symbol/text printed on the card):
-  - start       : green card with play symbol or "START" / "BAŞLAT"
-  - move_up     : blue card with up arrow or "YUKARI" / "UP"
-  - move_down   : red card with down arrow or "ASAGI" / "DOWN"
-  - move_left   : yellow card with left arrow or "SOL" / "LEFT"
-  - move_right  : purple card with right arrow or "SAG" / "RIGHT"
-  - loop_start  : orange card with repeat symbol or "DONGU" / "LOOP" — also read the digit on it
-  - loop_end    : pink/magenta card with end symbol or "BITIS" / "END"
+BLOCK TYPES — identify by the TEXT or SYMBOL visible on the card face:
+  - start       : shows a play symbol (▶) or the word START / BAŞLAT
+  - move_up     : shows an UP arrow (↑) AND the word YUKARI or UP or Move Up
+  - move_down   : shows a DOWN arrow (↓) AND the word AŞAĞI or DOWN or Move Down  
+  - move_left   : shows a LEFT arrow (←) AND the word SOL or LEFT or Move Left
+  - move_right  : shows a RIGHT arrow (→) AND the word SAĞ or RIGHT or Move Right
+  - loop_start  : shows a repeat/loop symbol (🔁) or the word DÖNGÜ / LOOP, with a number
+  - loop_end    : shows an end symbol or the word BİTİŞ / END
 
-Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
-Each element must have these exact keys:
-  "block_type"  : one of the type strings above (or "unknown")
+CRITICAL RULES:
+  1. A card MUST have readable text or a clear label to be identified — do NOT guess from color alone.
+  2. If a card has an arrow but NO readable label/text, mark it as "unknown".
+  3. If a card is partially out of frame or unreadable, mark it as "unknown".
+  4. Only count cards that are clearly and fully visible with a readable label.
+  5. Read row by row, left to right. Report blocks in that exact order.
+
+Return ONLY a valid JSON array, no markdown, no explanation.
+Each item must have:
+  "block_type"  : string (one of the types above, or "unknown")
   "confidence"  : float 0.0-1.0
-  "loop_count"  : integer repeat count if block_type is "loop_start", else null
-  "bbox_x"      : approximate left pixel (integer)
-  "bbox_y"      : approximate top pixel (integer)
-  "bbox_w"      : approximate width in pixels (integer)
-  "bbox_h"      : approximate height in pixels (integer)
+  "loop_count"  : integer if loop_start, else null
+  "bbox_x"      : left pixel (integer)
+  "bbox_y"      : top pixel (integer)  
+  "bbox_w"      : width in pixels (integer)
+  "bbox_h"      : height in pixels (integer)
 
-Example output:
-[
-  {"block_type":"start","confidence":0.98,"loop_count":null,"bbox_x":40,"bbox_y":50,"bbox_w":80,"bbox_h":80},
-  {"block_type":"move_up","confidence":0.95,"loop_count":null,"bbox_x":140,"bbox_y":50,"bbox_w":80,"bbox_h":80},
-  {"block_type":"loop_start","confidence":0.92,"loop_count":3,"bbox_x":240,"bbox_y":50,"bbox_w":80,"bbox_h":80},
-  {"block_type":"move_right","confidence":0.96,"loop_count":null,"bbox_x":340,"bbox_y":50,"bbox_w":80,"bbox_h":80},
-  {"block_type":"loop_end","confidence":0.94,"loop_count":null,"bbox_x":440,"bbox_y":50,"bbox_w":80,"bbox_h":80}
-]
-
-If no blocks are found, return an empty array: []
+If no valid labeled blocks are found, return: []
 """.strip()
 
 _VALID_BLOCK_TYPES = {bt.value for bt in BlockType}
