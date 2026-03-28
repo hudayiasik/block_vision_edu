@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BlockVision Edu 🐱</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&family=Space+Mono:wght@700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- ═══ HEADER ═══════════════════════════════════════════════════ -->
+  <header class="header">
+    <div class="header__logo">
+      <span class="logo-icon">🧩</span>
+      <span class="logo-text">BlockVision <em>Edu</em></span>
+    </div>
+    <div class="header__status" id="status-bar">
+      <span class="dot dot--idle"></span>
+      <span id="status-text">Ready</span>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN LAYOUT ═══════════════════════════════════════════════ -->
+  <main class="layout">
+
+    <!-- ── LEFT PANEL: Upload ────────────────────────────────── -->
+    <section class="panel panel--upload" aria-label="Upload photo">
+      <h2 class="panel__title">📷 Take a Photo</h2>
+      <p class="panel__subtitle">Lay your code blocks on a flat surface, then snap or upload a photo.</p>
+
+      <div class="drop-zone" id="drop-zone" role="button" tabindex="0"
+           aria-label="Drop image here or click to upload">
+        <div class="drop-zone__inner">
+          <div class="drop-zone__icon">📸</div>
+          <p class="drop-zone__text">Drop image here<br>or <strong>tap to upload</strong></p>
+          <input type="file" id="file-input" accept="image/*" capture="environment" hidden />
+        </div>
+        <img id="preview-img" class="drop-zone__preview" alt="Preview" hidden />
+      </div>
+
+      <button class="btn btn--primary" id="analyze-btn" disabled>
+        <span class="btn__icon">🔍</span> Analyze Blocks
+      </button>
+
+      <!-- Detected sequence display -->
+      <div class="sequence-box" id="sequence-box" hidden>
+        <h3 class="sequence-box__title">Detected Sequence</h3>
+        <div class="sequence-box__chips" id="chips-container"></div>
+      </div>
+
+      <!-- Color reference guide -->
+      <details class="color-guide">
+        <summary class="color-guide__toggle">🎨 Block Color Guide</summary>
+        <ul class="color-guide__list" id="color-guide-list"></ul>
+      </details>
+    </section>
+
+    <!-- ── CENTER PANEL: Stage ───────────────────────────────── -->
+    <section class="panel panel--stage" aria-label="Cat stage">
+      <h2 class="panel__title">🐱 Cat Stage</h2>
+
+      <div class="stage" id="stage">
+        <canvas id="stage-canvas" width="480" height="480"></canvas>
+        <!-- Cat sprite rendered via canvas, SVG fallback below -->
+        <div class="cat-sprite" id="cat-sprite" aria-label="Scratch cat" role="img">
+          <svg id="cat-svg" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+            <!-- Body -->
+            <ellipse cx="40" cy="52" rx="22" ry="18" fill="#FFA03C"/>
+            <!-- Head -->
+            <circle cx="40" cy="30" r="18" fill="#FFA03C"/>
+            <!-- Ears -->
+            <polygon points="24,18 20,6 32,14" fill="#FFA03C"/>
+            <polygon points="56,18 60,6 48,14" fill="#FFA03C"/>
+            <!-- Inner ears -->
+            <polygon points="25,17 22,9 31,14" fill="#FF8C69"/>
+            <polygon points="55,17 58,9 49,14" fill="#FF8C69"/>
+            <!-- Eyes -->
+            <ellipse cx="33" cy="27" rx="5" ry="6" fill="white"/>
+            <ellipse cx="47" cy="27" rx="5" ry="6" fill="white"/>
+            <circle cx="34" cy="28" r="3" fill="#1E1E1E"/>
+            <circle cx="48" cy="28" r="3" fill="#1E1E1E"/>
+            <circle cx="35" cy="27" r="1" fill="white"/>
+            <circle cx="49" cy="27" r="1" fill="white"/>
+            <!-- Nose -->
+            <ellipse cx="40" cy="34" rx="3" ry="2" fill="#FF7A7A"/>
+            <!-- Mouth -->
+            <path d="M37,36 Q40,39 43,36" stroke="#c0453a" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+            <!-- Whiskers -->
+            <line x1="20" y1="33" x2="35" y2="34" stroke="#888" stroke-width="0.8"/>
+            <line x1="20" y1="36" x2="35" y2="36" stroke="#888" stroke-width="0.8"/>
+            <line x1="45" y1="34" x2="60" y2="33" stroke="#888" stroke-width="0.8"/>
+            <line x1="45" y1="36" x2="60" y2="36" stroke="#888" stroke-width="0.8"/>
+            <!-- Tail -->
+            <path d="M60,58 Q80,48 74,38" stroke="#FFA03C" stroke-width="6" fill="none" stroke-linecap="round"/>
+            <!-- Belly -->
+            <ellipse cx="40" cy="54" rx="12" ry="10" fill="#FFDCA8"/>
+            <!-- Feet -->
+            <ellipse cx="28" cy="68" rx="8" ry="5" fill="#FFA03C"/>
+            <ellipse cx="52" cy="68" rx="8" ry="5" fill="#FFA03C"/>
+          </svg>
+        </div>
+        <!-- Grid overlay -->
+        <canvas id="grid-canvas" width="480" height="480" class="grid-canvas"></canvas>
+      </div>
+
+      <!-- Controls -->
+      <div class="stage-controls">
+        <button class="btn btn--success" id="run-btn" disabled>
+          <span>▶</span> Run
+        </button>
+        <button class="btn btn--ghost" id="reset-btn">
+          <span>↺</span> Reset
+        </button>
+        <div class="step-counter" id="step-counter" hidden>
+          Step <span id="current-step">0</span> / <span id="total-steps">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── RIGHT PANEL: Program Viewer ──────────────────────── -->
+    <section class="panel panel--program" aria-label="Program blocks">
+      <h2 class="panel__title">📋 Program</h2>
+      <p class="panel__subtitle">Steps the cat will execute:</p>
+      <ol class="program-list" id="program-list">
+        <li class="program-list__empty">No program loaded yet.</li>
+      </ol>
+    </section>
+
+  </main>
+
+  <!-- ═══ TOAST NOTIFICATION ════════════════════════════════════════ -->
+  <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/stage.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
