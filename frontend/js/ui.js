@@ -1,181 +1,209 @@
 /**
- * ui.js — all DOM read/write operations.
- *
- * App logic never touches the DOM directly.
- * This keeps app.js clean and makes UI changes trivial.
+ * ui.js — tüm DOM işlemleri burada.
+ * App mantığı hiçbir zaman DOM'a direkt dokunmaz.
  */
 
 const UI = (() => {
-  // ── Element references ────────────────────────────────────────────
-  const els = {
-    dropZone:      document.getElementById('drop-zone'),
-    fileInput:     document.getElementById('file-input'),
-    previewImg:    document.getElementById('preview-img'),
-    analyzeBtn:    document.getElementById('analyze-btn'),
-    runBtn:        document.getElementById('run-btn'),
-    resetBtn:      document.getElementById('reset-btn'),
-    statusDot:     document.querySelector('.dot'),
-    statusText:    document.getElementById('status-text'),
-    sequenceBox:   document.getElementById('sequence-box'),
-    chipsContainer:document.getElementById('chips-container'),
-    programList:   document.getElementById('program-list'),
-    stepCounter:   document.getElementById('step-counter'),
-    currentStep:   document.getElementById('current-step'),
-    totalSteps:    document.getElementById('total-steps'),
-    toast:         document.getElementById('toast'),
-    colorGuideList:document.getElementById('color-guide-list'),
+  // Ekran referansları
+  const screens = {
+    menu:  document.getElementById('screen-menu'),
+    stage: document.getElementById('screen-stage'),
+    win:   document.getElementById('screen-win'),
   };
 
-  let _toastTimer = null;
+  function showScreen(name) {
+    Object.entries(screens).forEach(([k, el]) => {
+      if (el) el.style.display = k === name ? '' : 'none';
+    });
+  }
 
-  // ── Status bar ────────────────────────────────────────────────────
+  // ── Menü ────────────────────────────────────────────────────────
 
-  const STATUS_CLASSES = ['dot--idle', 'dot--loading', 'dot--success', 'dot--running', 'dot--error'];
+  function renderStageSelect(stages, completedSet, onSelect) {
+    const grid = document.getElementById('stage-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    stages.forEach((s, i) => {
+      const locked = i > 0 && !completedSet.has(stages[i - 1].id);
+      const done   = completedSet.has(s.id);
+      const btn = document.createElement('button');
+      btn.className = `stage-card ${locked ? 'locked' : ''} ${done ? 'done' : ''}`;
+      btn.disabled = locked;
+      btn.innerHTML = `
+        <div class="sc-emoji">${done ? '✅' : locked ? '🔒' : s.emoji}</div>
+        <div class="sc-num">Stage ${s.id}</div>
+        <div class="sc-title">${s.title}</div>
+      `;
+      btn.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate(30);
+        onSelect(s);
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  // ── Stage ekranı ────────────────────────────────────────────────
+
+  function setStageInfo(stageData) {
+    const el = document.getElementById('stage-info');
+    if (el) el.textContent = `Stage ${stageData.id} — ${stageData.title}`;
+    const desc = document.getElementById('stage-desc');
+    if (desc) desc.textContent = stageData.description;
+    const hint = document.getElementById('stage-hint');
+    if (hint) { hint.textContent = '💡 ' + stageData.hint; hint.style.display = 'none'; }
+  }
+
+  function showHint() {
+    const hint = document.getElementById('stage-hint');
+    if (hint) hint.style.display = '';
+  }
 
   function setStatus(state, text) {
-    STATUS_CLASSES.forEach(c => els.statusDot.classList.remove(c));
-    els.statusDot.classList.add(`dot--${state}`);
-    els.statusText.textContent = text;
+    const dot  = document.getElementById('status-dot');
+    const txt  = document.getElementById('status-text');
+    if (!dot || !txt) return;
+    dot.className = `status-dot dot-${state}`;
+    txt.textContent = text;
   }
-
-  // ── Toast ─────────────────────────────────────────────────────────
-
-  function showToast(message, type = 'info', durationMs = 3000) {
-    clearTimeout(_toastTimer);
-    els.toast.textContent = message;
-    els.toast.className = `toast toast--${type} show`;
-    _toastTimer = setTimeout(() => {
-      els.toast.classList.remove('show');
-    }, durationMs);
-  }
-
-  // ── Image preview ─────────────────────────────────────────────────
-
-  function showImagePreview(file) {
-    const url = URL.createObjectURL(file);
-    els.previewImg.src = url;
-    els.previewImg.hidden = false;
-    els.dropZone.querySelector('.drop-zone__inner').style.display = 'none';
-  }
-
-  function clearImagePreview() {
-    els.previewImg.hidden = true;
-    els.previewImg.src = '';
-    els.dropZone.querySelector('.drop-zone__inner').style.display = '';
-  }
-
-  // ── Sequence chips ────────────────────────────────────────────────
-
-  function renderChips(rawBlocks) {
-    els.chipsContainer.innerHTML = '';
-    rawBlocks.forEach((blockName, i) => {
-      const chip = document.createElement('span');
-      const meta = CONFIG.BLOCK_META[blockName] || CONFIG.BLOCK_META.unknown;
-      chip.className = `chip chip--${blockName}`;
-      chip.textContent = `${meta.icon} ${meta.label}`;
-      chip.style.animationDelay = `${i * 60}ms`;
-      els.chipsContainer.appendChild(chip);
-    });
-    els.sequenceBox.hidden = false;
-  }
-
-  // ── Program list ──────────────────────────────────────────────────
 
   function renderProgramList(steps) {
-    els.programList.innerHTML = '';
+    const list = document.getElementById('program-list');
+    if (!list) return;
+    list.innerHTML = '';
     if (!steps.length) {
-      els.programList.innerHTML = '<li class="program-list__empty">No steps detected.</li>';
+      list.innerHTML = '<li class="prog-empty">Henüz program yok.</li>';
       return;
     }
-    steps.forEach((step, i) => {
-      const meta = CONFIG.BLOCK_META[step.action] || CONFIG.BLOCK_META.unknown;
+    steps.forEach((s, i) => {
+      const meta = CONFIG.BLOCK_META[s.action] || CONFIG.BLOCK_META.unknown;
       const li = document.createElement('li');
-      li.className = 'program-item';
-      li.id = `step-${i}`;
-      li.innerHTML = `
-        <span class="program-item__num">${i + 1}</span>
-        <span class="program-item__icon">${meta.icon}</span>
-        <span class="program-item__label">${meta.label}</span>
-      `;
-      li.style.animationDelay = `${i * 40}ms`;
-      els.programList.appendChild(li);
+      li.className = 'prog-item';
+      li.id = `prog-${i}`;
+      li.innerHTML = `<span class="prog-num">${i+1}</span>
+        <span class="prog-icon">${meta.icon}</span>
+        <span class="prog-label">${meta.label}</span>`;
+      list.appendChild(li);
     });
   }
 
-  function highlightStep(index) {
-    document.querySelectorAll('.program-item').forEach((el, i) => {
-      el.classList.toggle('active', i === index);
-      if (i < index) el.classList.add('done');
+  function highlightStep(idx) {
+    document.querySelectorAll('.prog-item').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+      if (i < idx) el.classList.add('done');
     });
-    // Scroll active step into view
-    const active = document.getElementById(`step-${index}`);
-    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById(`prog-${idx}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function markAllDone() {
-    document.querySelectorAll('.program-item').forEach(el => {
-      el.classList.remove('active');
-      el.classList.add('done');
+    document.querySelectorAll('.prog-item')
+      .forEach(el => { el.classList.remove('active'); el.classList.add('done'); });
+  }
+
+  function renderChips(rawBlocks) {
+    const box = document.getElementById('chips-box');
+    const wrap = document.getElementById('chips-wrap');
+    if (!box || !wrap) return;
+    wrap.innerHTML = '';
+    rawBlocks.forEach((name, i) => {
+      const meta = CONFIG.BLOCK_META[name] || CONFIG.BLOCK_META.unknown;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.style.background = meta.color + '22';
+      chip.style.color = meta.color;
+      chip.style.border = `1.5px solid ${meta.color}55`;
+      chip.style.animationDelay = `${i * 50}ms`;
+      chip.textContent = `${meta.icon} ${meta.label}`;
+      wrap.appendChild(chip);
     });
+    box.style.display = rawBlocks.length ? '' : 'none';
   }
 
-  // ── Step counter ──────────────────────────────────────────────────
-
-  function showStepCounter(current, total) {
-    els.stepCounter.hidden = false;
-    els.currentStep.textContent = current;
-    els.totalSteps.textContent = total;
+  function setStepCounter(cur, total) {
+    const el = document.getElementById('step-counter');
+    if (el) el.textContent = `Adım ${cur} / ${total}`;
   }
 
-  function hideStepCounter() {
-    els.stepCounter.hidden = true;
+  function setRunBtn(running) {
+    const btn = document.getElementById('run-btn');
+    if (!btn) return;
+    btn.textContent = running ? '⏹ Durdur' : '▶ Çalıştır';
+    btn.classList.toggle('running', running);
   }
 
-  // ── Button states ─────────────────────────────────────────────────
-
-  function setAnalyzeBtnEnabled(enabled) {
-    els.analyzeBtn.disabled = !enabled;
+  function setRunEnabled(enabled) {
+    const btn = document.getElementById('run-btn');
+    if (btn) btn.disabled = !enabled;
   }
 
-  function setRunBtnEnabled(enabled) {
-    els.runBtn.disabled = !enabled;
+  function showAnalyzing(show) {
+    const overlay = document.getElementById('analyzing-overlay');
+    if (overlay) overlay.style.display = show ? 'flex' : 'none';
   }
 
-  function setRunBtnLabel(label) {
-    els.runBtn.innerHTML = label;
+  // ── Kazanma ekranı ──────────────────────────────────────────────
+
+  function showWin(stageData, stepCount) {
+    showScreen('win');
+    const title = document.getElementById('win-title');
+    const sub   = document.getElementById('win-sub');
+    if (title) title.textContent = `Stage ${stageData.id} Tamamlandı! 🎉`;
+    if (sub)   sub.textContent   = `${stepCount} adımda başardın!`;
+    _launchConfetti();
   }
 
-  // ── Color guide ───────────────────────────────────────────────────
-
-  function renderColorGuide() {
-    els.colorGuideList.innerHTML = '';
-    CONFIG.COLOR_GUIDE.forEach(({ label, color }) => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <span class="swatch" style="background:${color}"></span>
-        <span>${label}</span>
-      `;
-      els.colorGuideList.appendChild(li);
-    });
+  function _launchConfetti() {
+    const canvas = document.getElementById('confetti-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const pieces = Array.from({length: 80}, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * -canvas.height,
+      w: 8 + Math.random() * 8,
+      h: 6 + Math.random() * 6,
+      color: ['#FF6B6B','#FFD93D','#6BCB77','#4D96FF','#FF6BFF'][Math.floor(Math.random()*5)],
+      rot: Math.random() * 360,
+      vx: (Math.random()-0.5)*3,
+      vy: 2 + Math.random()*4,
+      vr: (Math.random()-0.5)*6,
+    }));
+    let frame;
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x + p.w/2, p.y + p.h/2);
+        ctx.rotate(p.rot * Math.PI/180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+        ctx.restore();
+        p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      });
+      if (pieces.some(p => p.y < canvas.height)) {
+        frame = requestAnimationFrame(draw);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    cancelAnimationFrame(frame);
+    draw();
   }
 
-  // ── Expose ────────────────────────────────────────────────────────
+  function showToast(msg, type = 'info', ms = 3000) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = `toast toast-${type} show`;
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), ms);
+  }
 
   return {
-    els,
-    setStatus,
-    showToast,
-    showImagePreview,
-    clearImagePreview,
-    renderChips,
-    renderProgramList,
-    highlightStep,
-    markAllDone,
-    showStepCounter,
-    hideStepCounter,
-    setAnalyzeBtnEnabled,
-    setRunBtnEnabled,
-    setRunBtnLabel,
-    renderColorGuide,
+    showScreen, renderStageSelect, setStageInfo, showHint,
+    setStatus, renderProgramList, highlightStep, markAllDone,
+    renderChips, setStepCounter, setRunBtn, setRunEnabled,
+    showAnalyzing, showWin, showToast,
   };
 })();

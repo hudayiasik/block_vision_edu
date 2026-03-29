@@ -1,160 +1,186 @@
 /**
- * app.js — application controller.
+ * app.js — ana kontrolcü (Mediator).
  *
- * Wires UI events → API calls → Stage updates.
- * Contains zero DOM manipulation (delegated to UI module).
- * Contains zero movement logic (delegated to Stage module).
- *
- * Follows the Mediator pattern: app.js is the only place
- * that knows about all three modules.
+ * KRİTİK KURAL: Event listener'lar SADECE init() içinde bir kez bağlanır.
+ * _onStageSelect veya başka fonksiyonlar listener EKLEMEZ — sadece _state değiştirir.
+ * Bu sayede her "Run"da listener birikmez.
  */
 
 const App = (() => {
-  // ── Application state ─────────────────────────────────────────────
   let _state = {
-    selectedFile: null,   // File | null
-    steps: [],            // StepSchema[]
+    currentStage: null,
+    steps: [],
+    stepCount: 0,
     isRunning: false,
-    activeWs: null,       // WebSocket | null
+    activeWs: null,
+    completed: new Set(JSON.parse(localStorage.getItem('bv_completed') || '[]')),
   };
 
-  // ── Initialization ────────────────────────────────────────────────
+  // ── Init — listener'lar YALNIZCA burada, bir kez bağlanır ────────
 
   function init() {
-    Stage.init();
-    UI.renderColorGuide();
-    _bindEvents();
-    UI.setStatus('idle', 'Ready');
+    _bindAllEvents();
+    UI.showScreen('menu');
+    UI.renderStageSelect(CONFIG.STAGES, _state.completed, _onStageSelect);
   }
 
-  // ── Event binding ─────────────────────────────────────────────────
+  function _bindAllEvents() {
+    // Menü
+    document.getElementById('btn-play').onclick = () => {
+      if (navigator.vibrate) navigator.vibrate(30);
+      document.getElementById('stage-select-section').style.display = '';
+      document.getElementById('btn-play').style.display = 'none';
+    };
 
-  function _bindEvents() {
-    const { els } = UI;
+    // Fotoğraf — onclick ile, tekrar bağlamaya gerek yok
+    const fileInput = document.getElementById('file-input');
+    const dropZone  = document.getElementById('drop-zone');
 
-    // Click on drop zone → open file picker
-    els.dropZone.addEventListener('click', () => els.fileInput.click());
-    els.dropZone.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') els.fileInput.click();
-    });
-
-    // Drag & drop
-    els.dropZone.addEventListener('dragover', e => {
+    fileInput.onchange = e => {
+      const f = e.target.files[0];
+      if (f) _onFileSelected(f);
+      fileInput.value = '';
+    };
+    dropZone.onclick    = () => fileInput.click();
+    dropZone.ondragover = e => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+    dropZone.ondrop = e => {
       e.preventDefault();
-      els.dropZone.classList.add('drag-over');
-    });
-    els.dropZone.addEventListener('dragleave', () => {
-      els.dropZone.classList.remove('drag-over');
-    });
-    els.dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      els.dropZone.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (file) _onFileSelected(file);
-    });
+      dropZone.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0];
+      if (f) _onFileSelected(f);
+    };
 
-    // File input change (camera or gallery)
-    els.fileInput.addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (file) _onFileSelected(file);
-    });
+    // Stage kontrolleri
+    document.getElementById('run-btn').onclick = () => {
+      if (navigator.vibrate) navigator.vibrate(30);
+      _state.isRunning ? _stopExecution() : _startExecution();
+    };
 
-    // Analyze button
-    els.analyzeBtn.addEventListener('click', _onAnalyze);
+    document.getElementById('reset-btn').onclick = () => {
+      if (navigator.vibrate) navigator.vibrate(20);
+      _onReset();
+    };
 
-    // Run button
-    els.runBtn.addEventListener('click', () => {
-      if (_state.isRunning) {
-        _stopExecution();
-      } else {
-        _startExecution();
-      }
-    });
+    document.getElementById('hint-btn').onclick = () => UI.showHint();
 
-    // Reset button
-    els.resetBtn.addEventListener('click', _onReset);
+    document.getElementById('back-btn').onclick = () => {
+      if (_state.isRunning) _stopExecution();
+      UI.showScreen('menu');
+      UI.renderStageSelect(CONFIG.STAGES, _state.completed, _onStageSelect);
+    };
+
+    // Kazanma ekranı — onclick ile, her gösterimde üzerine yazılır
+    document.getElementById('win-next-btn').onclick = _onWinNext;
+    document.getElementById('win-retry-btn').onclick = _onWinRetry;
+    document.getElementById('win-menu-btn').onclick  = _onWinMenu;
   }
 
-  // ── File selected ─────────────────────────────────────────────────
+  // ── Stage seçimi ─────────────────────────────────────────────────
 
-  function _onFileSelected(file) {
+  function _onStageSelect(stageData) {
+    if (_state.isRunning) _stopExecution();
+
+    _state.currentStage = stageData;
+    _state.steps        = [];
+    _state.stepCount    = 0;
+    _state.isRunning    = false;
+    _state.activeWs     = null;
+
+    UI.showScreen('stage');
+    UI.setStageInfo(stageData);
+    UI.renderProgramList([]);
+    UI.setRunEnabled(false);
+    UI.setStatus('idle', 'Hazır');
+    UI.renderChips([]);
+
+    const stageEl = document.getElementById('stage');
+    Stage.init(stageEl, stageData, {
+      onWallHit:       _onWallHit,
+      onTargetReached: _onTargetReached,
+    });
+
+    // Preview temizle
+    const preview = document.getElementById('preview-img');
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+  }
+
+  // ── Dosya seçildi → otomatik analiz ──────────────────────────────
+
+  async function _onFileSelected(file) {
+    if (!_state.currentStage) return;
     if (!file.type.startsWith('image/')) {
-      UI.showToast('Please select an image file (JPEG or PNG).', 'error');
+      UI.showToast('Lutfen bir resim dosyasi sec!', 'error');
       return;
     }
-    _state.selectedFile = file;
-    UI.showImagePreview(file);
-    UI.setAnalyzeBtnEnabled(true);
-    UI.setStatus('idle', 'Image loaded — click Analyze');
-    UI.showToast('Image ready! Click "Analyze Blocks" 🔍', 'info');
-  }
 
-  // ── Analyze ───────────────────────────────────────────────────────
+    const preview = document.getElementById('preview-img');
+    if (preview) {
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = '';
+    }
 
-  async function _onAnalyze() {
-    if (!_state.selectedFile) return;
-
-    UI.setStatus('loading', 'Analyzing…');
-    UI.setAnalyzeBtnEnabled(false);
-    UI.showToast('Scanning for code blocks… 🔍', 'info');
+    UI.showAnalyzing(true);
+    UI.setStatus('loading', 'Bloklar taranıyor...');
+    UI.setRunEnabled(false);
 
     try {
-      const result = await API.analyzeImage(_state.selectedFile);
+      const result = await API.analyzeImage(file);
 
-      if (!result.success || result.steps.length === 0) {
-        const msg = result.error || 'No blocks detected. Try again with better lighting.';
-        UI.showToast(msg, 'error', 5000);
-        UI.setStatus('error', 'No blocks found');
+      if (!result.success || !result.steps?.length) {
+        UI.showToast(result.error || 'Blok bulunamadi, tekrar dene!', 'error', 5000);
+        UI.setStatus('error', 'Blok bulunamadı');
         return;
       }
 
       _state.steps = result.steps;
       UI.renderChips(result.raw_blocks);
       UI.renderProgramList(result.steps);
-      UI.setRunBtnEnabled(true);
-      UI.setStatus('success', `${result.steps.length} step(s) ready`);
-      UI.showToast(`Found ${result.steps.length} steps! Press ▶ Run 🐱`, 'success');
+      UI.setRunEnabled(true);
+      UI.setStatus('success', `${result.steps.length} adım hazır!`);
+      UI.showToast(`${result.steps.length} blok bulundu! Calistir'a bas`, 'success');
+      if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
 
     } catch (err) {
-      UI.showToast(`Error: ${err.message}`, 'error', 6000);
-      UI.setStatus('error', 'Analysis failed');
-      console.error('[App] Analyze error:', err);
+      UI.showToast(`Hata: ${err.message}`, 'error', 6000);
+      UI.setStatus('error', 'Analiz basarisiz');
     } finally {
-      UI.setAnalyzeBtnEnabled(true);
+      UI.showAnalyzing(false);
     }
   }
 
-  // ── Execution ─────────────────────────────────────────────────────
+  // ── Çalıştırma ────────────────────────────────────────────────────
 
   function _startExecution() {
-    if (!_state.steps.length) return;
-    _state.isRunning = true;
-    UI.setRunBtnLabel('<span>⏹</span> Stop');
-    UI.setStatus('running', 'Running…');
+    if (!_state.steps.length || _state.isRunning) return;
+
+    _state.isRunning  = true;
+    _state.stepCount  = 0;
+    UI.setRunBtn(true);
+    UI.setStatus('running', 'Calisiyor...');
+    Stage.reset();
 
     _state.activeWs = API.executeProgram(_state.steps, {
       onReset: () => {
         Stage.reset();
-        UI.hideStepCounter();
-        console.log('[App] Stage reset by server.');
+        UI.setStepCounter(0, _state.steps.length);
       },
       onStep: ({ stepIndex, action, totalSteps }) => {
         Stage.step(action);
+        _state.stepCount = stepIndex + 1;
         UI.highlightStep(stepIndex);
-        UI.showStepCounter(stepIndex + 1, totalSteps);
+        UI.setStepCounter(stepIndex + 1, totalSteps);
       },
       onDone: ({ totalSteps }) => {
-        Stage.celebrate();
         UI.markAllDone();
-        UI.showStepCounter(totalSteps, totalSteps);
-        UI.showToast('🎉 Program finished! Great job!', 'success', 4000);
-        UI.setStatus('success', 'Done!');
+        UI.setStepCounter(totalSteps, totalSteps);
         _resetRunState();
+        UI.setStatus('success', 'Bitti!');
       },
-      onError: (msg) => {
-        UI.showToast(`WebSocket error: ${msg}`, 'error');
-        UI.setStatus('error', 'Connection error');
+      onError: msg => {
+        UI.showToast(`Baglanti hatasi: ${msg}`, 'error');
         _resetRunState();
+        UI.setStatus('error', 'Hata');
       },
     });
   }
@@ -162,14 +188,50 @@ const App = (() => {
   function _stopExecution() {
     _state.activeWs?.close();
     _resetRunState();
-    UI.setStatus('idle', 'Stopped');
-    UI.showToast('Execution stopped.', 'info');
+    UI.setStatus('idle', 'Durduruldu');
   }
 
   function _resetRunState() {
     _state.isRunning = false;
-    _state.activeWs = null;
-    UI.setRunBtnLabel('<span>▶</span> Run');
+    _state.activeWs  = null;
+    UI.setRunBtn(false);
+  }
+
+  // ── Duvar / Hedef ─────────────────────────────────────────────────
+
+  function _onWallHit() {
+    UI.showToast('Duvara carpti!', 'error', 1500);
+  }
+
+  function _onTargetReached() {
+    const stageData = _state.currentStage;
+    _state.completed.add(stageData.id);
+    localStorage.setItem('bv_completed', JSON.stringify([..._state.completed]));
+    setTimeout(() => UI.showWin(stageData, _state.stepCount), 500);
+  }
+
+  // ── Kazanma ekranı butonları ──────────────────────────────────────
+
+  function _onWinNext() {
+    const stages = CONFIG.STAGES;
+    const idx    = stages.findIndex(s => s.id === _state.currentStage.id);
+    const next   = stages[idx + 1];
+    if (next) {
+      _onStageSelect(next);
+    } else {
+      UI.showScreen('menu');
+      UI.renderStageSelect(CONFIG.STAGES, _state.completed, _onStageSelect);
+      UI.showToast('Tum stageler tamamlandi!', 'success', 5000);
+    }
+  }
+
+  function _onWinRetry() {
+    _onStageSelect(_state.currentStage);
+  }
+
+  function _onWinMenu() {
+    UI.showScreen('menu');
+    UI.renderStageSelect(CONFIG.STAGES, _state.completed, _onStageSelect);
   }
 
   // ── Reset ─────────────────────────────────────────────────────────
@@ -178,20 +240,28 @@ const App = (() => {
     if (_state.isRunning) _stopExecution();
     Stage.reset();
     _state.steps = [];
-    _state.selectedFile = null;
-    UI.clearImagePreview();
-    UI.setAnalyzeBtnEnabled(false);
-    UI.setRunBtnEnabled(false);
-    UI.hideStepCounter();
+    UI.setRunEnabled(false);
     UI.renderProgramList([]);
-    UI.els.sequenceBox.hidden = true;
-    UI.setStatus('idle', 'Ready');
-    // Clear file input so same file can be re-selected
-    UI.els.fileInput.value = '';
+    UI.renderChips([]);
+    UI.setStatus('idle', 'Sifirlandı');
+    const preview = document.getElementById('preview-img');
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
   }
 
   return { init };
 })();
 
-// ── Bootstrap ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Menü yıldızları
+(function spawnStars() {
+  const container = document.getElementById('menu-stars');
+  if (!container) return;
+  for (let i = 0; i < 40; i++) {
+    const s = document.createElement('div');
+    s.className = 'star-dot';
+    const size = 1 + Math.random() * 3;
+    s.style.cssText = `width:${size}px;height:${size}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-duration:${3+Math.random()*6}s;animation-delay:${Math.random()*5}s;opacity:${0.3+Math.random()*0.7}`;
+    container.appendChild(s);
+  }
+})();

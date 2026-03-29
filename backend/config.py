@@ -1,17 +1,17 @@
 """
 Centralized configuration.
+Birden fazla Gemini API key destekler — rate limit'e ulaşınca otomatik döner.
 
-All secrets and settings are read from environment variables or a .env file.
-NEVER hardcode API keys in source code — always use env vars.
-
-Usage:
-    Local dev  → create a .env file (git-ignored)
-    Production → set env vars in Render / Railway dashboard
+.env örneği:
+    GEMINI_API_KEY=key1,key2,key3
+    GEMINI_MODEL=gemini-2.5-flash-lite
+    DETECTOR_BACKEND=gemini
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,21 +20,14 @@ class Settings(BaseSettings):
     app_name: str = "BlockVision Edu"
     debug: bool = False
 
-    # Upload limits
-    max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
-
-    # Detection (ColorBlockDetector fallback tuning)
+    max_upload_bytes: int = 10 * 1024 * 1024
     min_block_area_px: int = 1_500
     row_tolerance_px: int = 60
-
-    # CORS
     cors_origins: list[str] = ["*"]
 
-    # Gemini — set GEMINI_API_KEY in .env or hosting dashboard
+    # Virgülle ayrılmış birden fazla key: "key1,key2,key3"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-1.5-flash"
-
-    # Which detector to use: "gemini" | "color"
+    gemini_model: str = "gemini-2.5-flash-lite"
     detector_backend: str = "gemini"
 
     model_config = SettingsConfigDict(
@@ -42,6 +35,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @property
+    def gemini_api_keys(self) -> List[str]:
+        """Virgülle ayrılmış keyleri liste olarak döndür."""
+        keys = [k.strip() for k in self.gemini_api_key.split(",") if k.strip()]
+        return keys
 
     @property
     def effective_detector(self) -> str:
