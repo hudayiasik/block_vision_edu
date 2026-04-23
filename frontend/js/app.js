@@ -248,7 +248,8 @@ const App = (() => {
     if (preview) { preview.src = ''; preview.style.display = 'none'; }
   }
 
-  return { init };
+  function getSteps() { return _state.steps; }
+  return { init, getSteps };
 })();
 
 document.addEventListener('DOMContentLoaded', () => App.init());
@@ -265,3 +266,110 @@ document.addEventListener('DOMContentLoaded', () => App.init());
     container.appendChild(s);
   }
 })();
+
+// ══════════════════════════════════════════════════════════════
+// BLUETOOTH MODÜLÜ — App.js ek bloğu
+// ══════════════════════════════════════════════════════════════
+const BtController = (() => {
+  let _steps = [];  // app.js'den paylaşılacak
+
+  function init(getStepsFn) {
+    _getSteps = getStepsFn;
+
+    // Durum değişimi callback
+    Bluetooth.onStatusChange(status => {
+      const dot   = document.getElementById('bt-dot');
+      const label = document.getElementById('bt-connect-label');
+      const txt   = document.getElementById('bt-status-text');
+      const btn   = document.getElementById('bt-connect-btn');
+      const hint  = document.getElementById('bt-hint');
+      const runBtn = document.getElementById('bt-run-btn');
+
+      dot.className = 'bt-dot ' + status;
+      if (status === 'connected') {
+        label.textContent = 'Bağlantıyı Kes';
+        txt.textContent   = 'Robot bağlı ✓';
+        btn.classList.add('connected');
+        hint.classList.remove('show');
+        runBtn.disabled = false;
+        UI.showToast('Robot bağlandı! 🤖', 'success');
+      } else {
+        label.textContent = 'Robota Bağlan';
+        txt.textContent   = 'Bağlı değil';
+        btn.classList.remove('connected');
+        runBtn.disabled = true;
+      }
+    });
+
+    // Bağlan/Kes butonu
+    document.getElementById('bt-connect-btn').onclick = async () => {
+      if (navigator.vibrate) navigator.vibrate(30);
+      if (Bluetooth.isConnected()) {
+        await Bluetooth.disconnect();
+      } else {
+        const hint = document.getElementById('bt-hint');
+        hint.classList.add('show');
+        try {
+          await Bluetooth.connect();
+        } catch (err) {
+          UI.showToast('Bağlantı hatası: ' + err.message, 'error', 6000);
+          hint.classList.add('show');
+        }
+      }
+    };
+
+    // Robotu çalıştır
+    document.getElementById('bt-run-btn').onclick = async () => {
+      if (navigator.vibrate) navigator.vibrate(30);
+      const steps = _getSteps();
+      if (!steps.length) {
+        UI.showToast('Önce blok fotoğrafı yükle!', 'error');
+        return;
+      }
+      await _runRobot(steps);
+    };
+  }
+
+  async function _runRobot(steps) {
+    const log    = document.getElementById('bt-step-log');
+    const runBtn = document.getElementById('bt-run-btn');
+    runBtn.disabled = true;
+    runBtn.textContent = '⏳ Çalışıyor...';
+
+    const cmds = steps.map(s => Bluetooth.ACTION_TO_CMD[s.action]).filter(Boolean);
+    log.textContent = `Gönderiliyor: ${cmds.join(' → ')}`;
+    log.classList.add('active');
+
+    try {
+      await Bluetooth.executeSteps(steps, (idx, action) => {
+        const cmd = Bluetooth.ACTION_TO_CMD[action] || '?';
+        log.textContent = `Adım ${idx+1}/${steps.length}: [${cmd}] ${action}`;
+        if (navigator.vibrate) navigator.vibrate(15);
+      });
+      log.textContent = '✓ Tamamlandı!';
+      UI.showToast('Robot programı tamamladı! 🤖✅', 'success');
+      if (navigator.vibrate) navigator.vibrate([50,30,100]);
+    } catch (err) {
+      log.textContent = 'Hata: ' + err.message;
+      log.classList.remove('active');
+      UI.showToast('Robot hatası: ' + err.message, 'error');
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = '🤖 Robotu Çalıştır';
+    }
+  }
+
+  let _getSteps = () => [];
+  function getSteps() { return _state.steps; }
+  return { init, getSteps };
+})();
+
+// ── Bluetooth'u app başlatırken init et ───────────────────────
+// (DOMContentLoaded zaten yukarıda var, bu append olduğu için çalışır)
+document.addEventListener('DOMContentLoaded', () => {
+  // _state.steps'e erişim için getter
+  // Not: App modülünden steps'i okuyabilmek için küçük bridge
+  if (typeof BtController !== 'undefined' && typeof Bluetooth !== 'undefined') {
+    BtController.init(() => App.getSteps());
+  }
+});

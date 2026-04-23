@@ -583,3 +583,101 @@ html, body {
   .prog-item { min-width: 80px; }
   :root { --cell: 48px; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   BLUETOOTH PANELİ
+══════════════════════════════════════════════════════════════ */
+.bt-panel {
+  background: rgba(0,0,0,0.35);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.bt-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.5);
+}
+.bt-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+.bt-dot.connected    { background: #00D084; box-shadow: 0 0 6px #00D084; }
+.bt-dot.connecting   { background: #FFB347; animation: pulse 0.8s infinite; }
+.bt-dot.disconnected { background: #555; }
+
+.btn-bt-connect {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.82rem;
+  background: rgba(77,159,255,0.15);
+  color: #4D9FFF;
+  border: 1px solid rgba(77,159,255,0.35);
+  border-radius: 20px;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-bt-connect:hover { background: rgba(77,159,255,0.25); border-color: #4D9FFF; }
+.btn-bt-connect.connected {
+  background: rgba(0,208,132,0.12);
+  color: #00D084;
+  border-color: rgba(0,208,132,0.35);
+}
+.btn-bt-connect.connected:hover { background: rgba(0,208,132,0.2); }
+
+.btn-bt-robot {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.82rem;
+  background: linear-gradient(135deg, rgba(255,140,0,0.9), rgba(255,107,0,0.9));
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-bt-robot:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(255,140,0,0.4); }
+.btn-bt-robot:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.bt-step-log {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.35);
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-step-log.active { color: #00D084; }
+
+.bt-hint {
+  width: 100%;
+  font-size: 0.7rem;
+  color: rgba(77,159,255,0.6);
+  line-height: 1.4;
+  display: none;
+}
+.bt-hint.show { display: block; }
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
